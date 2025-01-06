@@ -4,25 +4,49 @@ TAG ?= $(shell git log -n 1 --pretty=format:"%H")
 IMAGE ?= databack/mysql-backup
 BUILDIMAGE ?= $(IMAGE):build
 TARGET ?= $(IMAGE):$(TAG)
+OCIPLATFORMS ?= linux/amd64,linux/arm64
+LOCALPLATFORMS ?= linux/386 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64 windows/386
+DIST ?= dist
+GOOS?=$(shell uname -s | tr '[:upper:]' '[:lower:]')
+GOARCH?=$(shell uname -m)
+BIN ?= $(DIST)/mysql-backup-$(GOOS)-$(GOARCH)
 
+build-docker:
+	docker buildx build -t $(BUILDIMAGE) --platform $(OCIPLATFORMS) .
 
-build:
-	docker build -t $(BUILDIMAGE) .
+.PRECIOUS: $(foreach platform,$(LOCALPLATFORMS),$(DIST)/mysql-backup-$(subst /,-,$(platform)))
+
+build-all: $(foreach platform,$(LOCALPLATFORMS),build-local-$(subst /,-,$(platform)))
+
+build-local-%: $(DIST)/mysql-backup-%;
+
+$(DIST):
+	mkdir -p $@
+
+$(DIST)/mysql-backup-%: GOOS=$(word 1,$(subst -, ,$*))
+$(DIST)/mysql-backup-%: GOARCH=$(word 2,$(subst -, ,$*))
+$(DIST)/mysql-backup-%: $(DIST) 
+	GOOS=$(GOOS) GOARCH=$(GOARCH) go build -o $@ .
+
+build-local: $(BIN)
 
 push: build
 	docker tag $(BUILDIMAGE) $(TARGET)
 	docker push $(TARGET)
 
-test_dump:
-	cd test && DEBUG=$(DEBUG) ./test_dump.sh
+integration_test:
+	go test -v ./test --tags=integration
 
-test_cron:
-	cd test && ./test_cron.sh
+integration_test_debug:
+	dlv --wd=./test test ./test --build-flags="-tags=integration"
 
-test_source_target:
-	cd test && ./test_source_target.sh
+vet:
+	go vet --tags=integration ./...
 
-test: test_dump test_cron test_source_target
+test: unit_test integration_test
+
+unit_test:
+	go test -v ./...
 
 .PHONY: clean-test-stop clean-test-remove clean-test
 clean-test-stop:
@@ -36,15 +60,5 @@ clean-test-remove:
 	$(eval IDS:=$(shell docker ps -a --filter label=mysqltest -q))
 	@if [ -n "$(IDS)" ]; then docker rm $(IDS); fi
 	@echo
-	@echo Remove Volumes
-	$(eval IDS:=$(shell docker volume ls --filter label=mysqltest -q))
-	@if [ -n "$(IDS)" ]; then docker volume rm $(IDS); fi
-	@echo
 
-clean-test-network:
-	@echo Remove Networks
-	$(eval IDS:=$(shell docker network ls --filter label=mysqltest -q))
-	@if [ -n "$(IDS)" ]; then docker network rm $(IDS); fi
-	@echo
-
-clean-test: clean-test-stop clean-test-remove clean-test-network
+clean-test: clean-test-stop clean-test-remove

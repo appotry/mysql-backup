@@ -1,24 +1,29 @@
 # mysql backup image
-FROM alpine:3.9
-MAINTAINER Avi Deitcher <https://github.com/deitch>
+FROM golang:1.22.9-alpine3.20 AS build
 
-# install the necessary client
-# the mysql-client must be 10.3.15 or later
-RUN apk add --update 'mariadb-client>10.3.15' mariadb-connector-c bash python3 samba-client shadow openssl coreutils && \
-    rm -rf /var/cache/apk/* && \
-    touch /etc/samba/smb.conf && \
-    pip3 install awscli
+COPY . /src/mysql-backup
+WORKDIR /src/mysql-backup
+
+RUN mkdir /out && go build -o /out/mysql-backup .
+
+# we would do from scratch, but we need basic utilities in order to support pre/post scripts
+FROM alpine:3.20 AS runtime
+LABEL org.opencontainers.image.authors="https://github.com/databacker"
 
 # set us up to run as non-root user
-RUN groupadd -g 1005 appuser && \
-    useradd -r -u 1005 -g appuser appuser
-# ensure smb stuff works correctly
-RUN mkdir -p /var/cache/samba && chmod 0755 /var/cache/samba && chown appuser /var/cache/samba
+RUN apk add --no-cache bash && \
+    addgroup -g 1005 appuser && \
+    adduser -u 1005 -G appuser -D appuser
+
 USER appuser
 
-# install the entrypoint
-COPY functions.sh /
+COPY --from=build /out/mysql-backup /mysql-backup
 COPY entrypoint /entrypoint
+
+ENV DB_DUMP_PRE_BACKUP_SCRIPTS="/scripts.d/pre-backup/"
+ENV DB_DUMP_POST_BACKUP_SCRIPTS="/scripts.d/post-backup/"
+ENV DB_DUMP_PRE_RESTORE_SCRIPTS="/scripts.d/pre-restore/"
+ENV DB_DUMP_POST_RESTORE_SCRIPTS="/scripts.d/post-restore/"
 
 # start
 ENTRYPOINT ["/entrypoint"]
