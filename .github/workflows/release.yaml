@@ -20,20 +20,47 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     steps:
-    steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.22
+      - name: Build for all platforms
+        run: |
+          make build-all
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v3
       - name: Login to DockerHub
-        uses: docker/login-action@v1 
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - name: Build and push
-        id: docker_build
-        uses: docker/build-push-action@v2
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # list of Docker images to use as base name for tags
+          images: |
+            ${{env.IMAGE_NAME}}
+          # generate Docker tags based on the following events/attributes
+          # for any semver, including rc and alpha, etc. take the tag as is
+          # for ones that are exactly X.Y.Z, also tag it as latest
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}.{{patch}},value=latest
+      - name: Build and push semver tag
+        id: docker_build_push_semver
+        uses: docker/build-push-action@v6
         with:
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: |
-            ${{env.IMAGE_NAME}}:${{env.GITHUB_REF#refs/tags/}}
+            ${{ steps.meta.outputs.tags }}

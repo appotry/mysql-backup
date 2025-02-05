@@ -1,0 +1,92 @@
+# sample configuration file for telemetry service only; everything else is local
+# can be overridden by command-line arguments or remote, if configured
+
+# only needed if registered to send logs and results to a telemetry service
+# and not defined in the config service. Normally, you can just use the config
+# to get the telemetry info
+
+# standard reference of type and version
+version: config.databack.io/v1
+kind: local
+
+spec:
+
+  # set logging level, one of: error,warning,info,debug,trace; default is info
+  logging: info 
+
+  telemetry:
+    url: https://telemetry.databack.io
+    # sha256 fingerprint of certificate for the telemetry server, or one of the certificates in the signing chain; unneeded if the server is using a certificate signed by a well-known CA
+    # this is a sample fingerprint only
+    # DO NOT USE THIS FINGERPRINT; GET THE ACTUAL ONE FROM YOUR REMOTE SERVER!
+    certificates: sha256:69729b8e15a86efc177a57afb7171dfc64add28c2fca8cf1507e34453ccb1470
+    # base64-encoded Curve25519 private key for authentication to the telemetry server
+    # this is a sample key only
+    # DO NOT USE THIS KEY; GENERATE YOUR OWN!
+    credentials: BwMqVfr1myxqX8tikIPYCyNtpHgMLIg/2nUE+pLQnTE=
+    # only needed if required by endpoint
+
+  # dump, or backup, configuration
+  dump:
+    include: # optional, otherwise will do all tables except system tables
+      - table1
+      - table2
+    exclude: # optional, otherwise will do all tables except system tables
+      - table3
+      - table4
+    safechars: true # defaults to false
+    noDatabaseName: false # remove the `USE <database>` statement from backup files, defaults to false
+    # schedule to dump, can use one of: cron, frequency, once. If frequency is set, begin will be checked
+    schedule:
+      once: true # run only once and exit; ignores all other scheduling. Defaults to false
+      cron: "0 10 * * *"
+      frequency: 1440 # in minutes
+      begin: 25 # minutes from initialization
+    compression: gzip # defaults to gzip
+    filenamePattern: db_backup_{{ .now }}.{{ .compression }}
+    scripts:
+      preBackup: /path/to/prescripts/
+      postBackup: /path/to/postscripts/
+    # list of named targets to backup to, from the index below
+    targets:
+      - s3
+      - file
+      - otherfile
+      - smbshare
+
+  restore:
+    scripts:
+      preRestore: /path/to/prescripts/
+      postRestore: /path/to/postscripts/
+
+  # database configuration
+  database:
+    server: host
+    port: port
+    credentials:
+      username: user
+      password: password
+
+  # targets. Each target is a location, as well as credentials and config, as needed
+  targets:
+    s3:
+      type: s3
+      url: s3://bucket.us-west.amazonaws.com/databackup
+      region: us-west-1
+      endpoint: https://s3.us-west-1.amazonaws.com
+      credentials:
+        accessKeyId: access_key_id
+        secretAccessKey: secret_access_key
+    file:
+      type: file
+      url: file:///tmp/databackup
+    otherfile:
+      type: file
+      url: /tmp/databackup
+    smbshare:
+      type: smb
+      url: smb://cifshost:2125/databackup
+      credentials:
+        domain: mydomain
+        username: user
+        password: password
